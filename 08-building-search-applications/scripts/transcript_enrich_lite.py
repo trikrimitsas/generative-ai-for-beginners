@@ -1,26 +1,18 @@
-""" This script removes the text from the enriched transcript and saves it as a new json file."""
+"""This script removes the text from the enriched transcript and saves it as a new json file."""
 
 import json
-import os
-import argparse
 import logging
 
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger(__name__)
+from transcript_utils import configure_logging, output_path, parse_arguments
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-f", "--folder")
-args = parser.parse_args()
-
-TRANSCRIPT_FOLDER = args.folder if args.folder else None
-if not TRANSCRIPT_FOLDER:
-    logger.error("Transcript folder not provided")
-    exit(1)
+logger = configure_logging(__name__, logging.WARNING)
+args = parse_arguments(logger)
+TRANSCRIPT_FOLDER = args.folder
 
 
 # load video list from json file
-input_file = os.path.join(TRANSCRIPT_FOLDER, "output", "master_enriched.json")
-with open(input_file, "r", encoding="utf-8") as f:
+input_file = output_path(TRANSCRIPT_FOLDER, "master_enriched.json")
+with open(input_file, encoding="utf-8") as f:
     segments = json.load(f)
 
 total_segments = len(segments)
@@ -39,6 +31,6 @@ def remove_text(video_segments):
 lite = remove_text(segments)
 
 # save the embeddings to a json file
-output_file = os.path.join(TRANSCRIPT_FOLDER, "output", "master_enriched_lite.json")
+output_file = output_path(TRANSCRIPT_FOLDER, "master_enriched_lite.json")
 with open(output_file, "w", encoding="utf-8") as f:
     json.dump(lite, f)

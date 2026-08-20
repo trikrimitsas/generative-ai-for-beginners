@@ -1,26 +1,30 @@
-""" This script will get the speaker name from the YouTube video metadata and the first minute of the transcript using the OpenAI Functions entity extraction."""
+"""This script will get the speaker name from the YouTube video metadata and the first minute of the transcript using the OpenAI Functions entity extraction."""
 
-import json
-import os
 import glob
-import threading
+import json
 import logging
+import os
 import queue
 import time
-import argparse
+
 import dotenv
-from openai import OpenAI, BadRequestError
+from openai import BadRequestError
 from rich.progress import Progress
 from tenacity import (
     retry,
-    wait_random_exponential,
-    stop_after_attempt,
     retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_random_exponential,
+)
+from transcript_utils import (
+    clean_text,
+    configure_logging,
+    create_azure_openai_client,
+    parse_arguments,
+    run_worker_threads,
 )
 
-
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger(__name__)
+logger = configure_logging(__name__, logging.WARNING)
 
 # import dotenv
 dotenv.load_dotenv()
@@ -33,27 +37,13 @@ SEGMENT_MIN_LENGTH_MINUTES = 3
 OPENAI_REQUEST_TIMEOUT = 60
 
 OPENAI_MAX_TOKENS = 512
-AZURE_OPENAI_MODEL_DEPLOYMENT_NAME = os.getenv(
-    "AZURE_OPENAI_MODEL_DEPLOYMENT_NAME", "gpt-5-mini"
-)
+AZURE_OPENAI_MODEL_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_MODEL_DEPLOYMENT_NAME", "gpt-5-mini")
 
 
-client = OpenAI(
-    api_key=API_KEY,
-    base_url=f"{RESOURCE_ENDPOINT.rstrip('/')}/openai/v1/",
-)
+client = create_azure_openai_client(endpoint=RESOURCE_ENDPOINT, api_key=API_KEY)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-f", "--folder")
-parser.add_argument("--verbose", action="store_true")
-args = parser.parse_args()
-if args.verbose:
-    logger.setLevel(logging.DEBUG)
-
-TRANSCRIPT_FOLDER = args.folder if args.folder else None
-if not TRANSCRIPT_FOLDER:
-    logger.error("Transcript folder not provided")
-    exit(1)
+args = parse_arguments(logger)
+TRANSCRIPT_FOLDER = args.folder
 
 get_speaker_name = {
     "name": "get_speaker_name",
@@ -81,24 +71,6 @@ definition_map = {"get_speaker_name": get_speaker_name}
 q = queue.Queue()
 
 errors = 0
-
-
-class Counter:
-    """thread safe counter"""
-
-    def __init__(self):
-        """initialize the counter"""
-        self.value = 0
-        self.lock = threading.Lock()
-
-    def increment(self):
-        """increment the counter"""
-        with self.lock:
-            self.value += 1
-            return self.value
-
-
-counter = Counter()
 
 
 @retry(
@@ -138,17 +110,6 @@ def get_speaker_info(text):
     return function_name, arguments
 
 
-def clean_text(text):
-    """clean the text"""
-    text = text.replace("\n", " ")  # remove new lines
-    text = text.replace("&#39;", "'")
-    text = text.replace(">>", "")  # remove '>>'
-    text = text.replace("  ", " ")  # remove double spaces
-    text = text.replace("[inaudible]", "")  # [inaudible]
-
-    return text
-
-
 def get_first_segment(file_name):
     """Gets the first segment from the filename"""
 
@@ -159,7 +120,7 @@ def get_first_segment(file_name):
 
     vtt = file_name.replace(".json", ".json.vtt")
 
-    with open(vtt, "r", encoding="utf-8") as json_file:
+    with open(vtt, encoding="utf-8") as json_file:
         json_vtt = json.load(json_file)
 
         for segment in json_vtt:
@@ -168,9 +129,7 @@ def get_first_segment(file_name):
             if segment_begin_seconds is None:
                 segment_begin_seconds = current_seconds
                 # calculate the finish time from the segment_begin_time
-                segment_finish_seconds = (
-                    segment_begin_seconds + SEGMENT_MIN_LENGTH_MINUTES * 60
-                )
+                segment_finish_seconds = segment_begin_seconds + SEGMENT_MIN_LENGTH_MINUTES * 60
 
             if current_seconds < segment_finish_seconds:
                 # add the text to the transcript
@@ -188,10 +147,17 @@ def process_queue(progress, task):
             logger.error("Too many errors. Exiting...")
             exit(1)
 
-        with open(filename, "r", encoding="utf-8") as json_file:
+        with open(filename, encoding="utf-8") as json_file:
             metadata = json.load(json_file)
 
-            base_text = 'The title is: ' +  metadata['title'] + " " + metadata["description"] + " " + get_first_segment(filename)
+            base_text = (
+                "The title is: "
+                + metadata["title"]
+                + " "
+                + metadata["description"]
+                + " "
+                + get_first_segment(filename)
+            )
             # replace new line with empty string
             base_text = base_text.replace("\n", " ")
 
@@ -227,18 +193,7 @@ logger.debug("Starting speaker name update. Files to be processed: %s", q.qsize(
 start_time = time.time()
 with Progress() as progress:
     task1 = progress.add_task("[blue]Enriching Speaker Data...", total=q.qsize())
-    # create multiple threads to process the queue
-    threads = []
-    for i in range(PROCESSING_THREADS):
-        t = threading.Thread(target=process_queue, args=(progress, task1))
-        t.start()
-        threads.append(t)
-
-    # wait for all threads to finish
-    for t in threads:
-        t.join()
+    run_worker_threads(process_queue, PROCESSING_THREADS, args=(progress, task1))
 
 finish_time = time.time()
-logger.debug(
-    "Finished speaker name update. Total time taken: %s", finish_time - start_time
-)
+logger.debug("Finished speaker name update. Total time taken: %s", finish_time - start_time)
