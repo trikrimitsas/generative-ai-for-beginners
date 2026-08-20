@@ -10,6 +10,7 @@ from .api_utils import (
     create_openai_client,
     make_safe_request,
 )
+from .concurrency import Counter, run_worker_threads
 from .env_utils import get_required_env, validate_env_vars
 from .input_validation import (
     sanitize_prompt_input,
@@ -26,4 +27,6 @@ __all__ = [
     "make_safe_request",
     "create_openai_client",
     "create_azure_openai_client",
+    "Counter",
+    "run_worker_threads",
 ]

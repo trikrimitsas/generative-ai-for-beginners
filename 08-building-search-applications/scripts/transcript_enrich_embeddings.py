@@ -1,23 +1,30 @@
-""" This script will take a text column and create embeddings for each text using the OpenAI API."""
+"""This script will take a text column and create embeddings for each text using the OpenAI API."""
 
-import argparse
-import logging
-import re
-import os
 import json
-import threading
+import logging
+import os
 import queue
+import re
 import time
+
 import dotenv
-from openai import AzureOpenAI, BadRequestError
 import tiktoken
+from openai import BadRequestError
+from rich.progress import Progress
 from tenacity import (
     retry,
-    wait_random_exponential,
-    stop_after_attempt,
     retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_random_exponential,
 )
-from rich.progress import Progress
+from transcript_utils import (
+    configure_logging,
+    convert_time_to_seconds,
+    create_azure_openai_client,
+    output_path,
+    parse_arguments,
+    run_worker_threads,
+)
 
 # import dotenv
 dotenv.load_dotenv()
@@ -30,26 +37,16 @@ EMBEDDINGS_DEPLOYMENT_NAME = os.getenv(
 PROCESSING_THREADS = 6
 OPENAI_REQUEST_TIMEOUT = 60
 
-client = AzureOpenAI(
+client = create_azure_openai_client(
+    endpoint=RESOURCE_ENDPOINT,
     api_key=API_KEY,
-    azure_endpoint=RESOURCE_ENDPOINT,
     api_version="2024-10-21",
 )
 
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger(__name__)
+logger = configure_logging(__name__, logging.WARNING)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-f", "--folder")
-parser.add_argument("--verbose", action="store_true")
-args = parser.parse_args()
-if args.verbose:
-    logger.setLevel(logging.DEBUG)
-
-TRANSCRIPT_FOLDER = args.folder if args.folder else None
-if not TRANSCRIPT_FOLDER:
-    logger.error("Transcript folder not provided")
-    exit(1)
+args = parse_arguments(logger)
+TRANSCRIPT_FOLDER = args.folder
 
 tokenizer = tiktoken.get_encoding("cl100k_base")
 
@@ -62,14 +59,14 @@ logger.debug("Starting OpenAI Embeddings")
 
 
 # load sessions_list from json file
-input_file = os.path.join(TRANSCRIPT_FOLDER, "output", "master_enriched.json")
-with open(input_file, "r", encoding="utf-8") as f:
+input_file = output_path(TRANSCRIPT_FOLDER, "master_enriched.json")
+with open(input_file, encoding="utf-8") as f:
     segments = json.load(f)
 
 total_segments = len(segments)
 
 
-def normalize_text(s, sep_token=" \n "):
+def normalize_text(s, sep_token=" \n "):  # noqa: S107
     """normalize text by removing extra spaces and newlines"""
     s = re.sub(r"\s+", " ", s).strip()
     s = re.sub(r". ,", "", s)
@@ -136,27 +133,7 @@ for segment in segments:
 
 with Progress() as progress:
     task1 = progress.add_task("[green]Enriching Embeddings...", total=total_segments)
-    # create multiple threads to process the queue
-    threads = []
-    for i in range(PROCESSING_THREADS):
-        t = threading.Thread(target=process_queue, args=(progress, task1))
-        t.start()
-        threads.append(t)
-
-    # wait for all threads to finish
-    for t in threads:
-        t.join()
-
-
-# convert time '00:01:20' to seconds
-def convert_time_to_seconds(value):
-    """convert time to seconds"""
-    time_value = value.split(":")
-    if len(time_value) == 3:
-        h, m, s = time_value
-        return int(h) * 3600 + int(m) * 60 + int(s)
-    else:
-        return 0
+    run_worker_threads(process_queue, PROCESSING_THREADS, args=(progress, task1))
 
 
 # sort the output segments by videoId and start
@@ -165,6 +142,6 @@ output_segments.sort(key=lambda x: (x["videoId"], convert_time_to_seconds(x["sta
 logger.debug("Total segments processed: %s", len(output_segments))
 
 # save the embeddings to a json file
-output_file = os.path.join(TRANSCRIPT_FOLDER, "output", "master_enriched.json")
+output_file = output_path(TRANSCRIPT_FOLDER, "master_enriched.json")
 with open(output_file, "w", encoding="utf-8") as f:
     json.dump(output_segments, f)

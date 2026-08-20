@@ -1,20 +1,22 @@
-""" This script downloads the transcripts for all the videos in a YouTube playlist. """
+"""This script downloads the transcripts for all the videos in a YouTube playlist."""
 
-import os
 import json
 import logging
-import time
-import threading
-import argparse
+import os
 import queue
+import time
+
 import googleapiclient.discovery
-import googleapiclient.errors
+from transcript_utils import (
+    Counter,
+    configure_logging,
+    parse_arguments,
+    run_worker_threads,
+)
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import WebVTTFormatter
 
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = configure_logging(__name__, logging.INFO)
 
 GOOGLE_DEVELOPER_API_KEY = os.environ["GOOGLE_DEVELOPER_API_KEY"]
 TRANSCRIPT_FOLDER = "transcripts"
@@ -29,38 +31,9 @@ PROCESSING_THREADS = 40
 formatter = WebVTTFormatter()
 q = queue.Queue()
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-f", "--folder")
-parser.add_argument("-p", "--playlist")
-parser.add_argument("--verbose", action="store_true")
-args = parser.parse_args()
-if args.verbose:
-    logger.setLevel(logging.DEBUG)
-
-TRANSCRIPT_FOLDER = args.folder if args.folder else None
-PLAYLIST_ID = args.playlist if args.playlist else None
-
-if not TRANSCRIPT_FOLDER:
-    logger.error("Transcript folder not provided")
-    exit(1)
-
-if not PLAYLIST_ID:
-    logger.error("Playlist ID not provided")
-    exit(1)
-
-
-class Counter:
-    """thread safe counter"""
-
-    def __init__(self):
-        """initialize the counter"""
-        self.value = 0
-        self.lock = threading.Lock()
-
-    def increment(self):
-        """increment the counter"""
-        with self.lock:
-            self.value += 1
+args = parse_arguments(logger, include_playlist=True)
+TRANSCRIPT_FOLDER = args.folder
+PLAYLIST_ID = args.playlist
 
 
 counter = Counter()
@@ -163,19 +136,7 @@ while request:
 
 start_time = time.time()
 
-# create multiple threads to process the queue
-threads = []
-for i in range(PROCESSING_THREADS):
-    t = threading.Thread(
-        target=process_queue,
-        args=(),
-    )
-    t.start()
-    threads.append(t)
-
-# wait for all threads to finish
-for t in threads:
-    t.join()
+run_worker_threads(process_queue, PROCESSING_THREADS)
 
 
 finish_time = time.time()
