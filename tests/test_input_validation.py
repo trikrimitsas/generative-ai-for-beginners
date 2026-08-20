@@ -30,6 +30,21 @@ class TestValidateNumberInput:
         with pytest.raises(ValueError):
             validate_number_input("abc")
 
+    def test_boundaries_are_inclusive(self):
+        assert validate_number_input("1", min_val=1, max_val=20) == 1
+        assert validate_number_input("20", min_val=1, max_val=20) == 20
+
+    def test_negative_range_supported(self):
+        assert validate_number_input("-5", min_val=-10, max_val=0) == -5
+
+    def test_non_string_raises_with_field_name(self):
+        with pytest.raises(ValueError, match="age"):
+            validate_number_input(None, field_name="age")
+
+    def test_error_message_includes_field_name(self):
+        with pytest.raises(ValueError, match="quantity"):
+            validate_number_input("nope", field_name="quantity")
+
 
 class TestValidateTextInput:
     def test_valid_text(self):
@@ -52,6 +67,20 @@ class TestValidateTextInput:
     def test_too_short_raises(self):
         with pytest.raises(ValueError, match="too short"):
             validate_text_input("ab", min_length=5)
+
+    def test_none_raises(self):
+        with pytest.raises(ValueError, match="cannot be None"):
+            validate_text_input(None)
+
+    def test_none_allowed_returns_empty(self):
+        assert validate_text_input(None, allow_empty=True) == ""
+
+    def test_max_length_boundary_accepted(self):
+        assert validate_text_input("x" * 10, max_length=10) == "x" * 10
+
+    def test_error_messages_use_field_name(self):
+        with pytest.raises(ValueError, match="recipe name"):
+            validate_text_input("", field_name="recipe name")
 
 
 class TestSanitizePromptInput:
@@ -86,6 +115,26 @@ class TestSanitizePromptInput:
         with pytest.raises(ValueError, match="invalid characters"):
             sanitize_prompt_input("{{a}}")
 
+    def test_removes_control_characters(self):
+        assert sanitize_prompt_input("ab\x00c\x07d") == "abcd"
+
+    def test_normalizes_whitespace(self):
+        assert sanitize_prompt_input("  hello \n\t  world  ") == "hello world"
+
+    def test_strict_mode_drops_unsafe_characters(self):
+        result = sanitize_prompt_input("safe [text] `backtick` {brace}", strict=True)
+        assert "[" not in result
+        assert "]" not in result
+        assert "`" not in result
+        assert "{" not in result
+        assert "safe text backtick brace" == result
+
+    def test_strict_mode_keeps_basic_punctuation(self):
+        assert sanitize_prompt_input("Hello, world! (ok?)", strict=True) == "Hello, world! (ok?)"
+
+    def test_none_returns_empty(self):
+        assert sanitize_prompt_input(None) == ""
+
 
 class TestValidateEmail:
     def test_valid_email_lowercased(self):
@@ -113,3 +162,14 @@ class TestValidateUrl:
     def test_garbage_raises(self):
         with pytest.raises(ValueError):
             validate_url("not a url")
+
+    def test_garbage_raises_when_https_not_required(self):
+        with pytest.raises(ValueError, match="Invalid URL"):
+            validate_url("ftp://example.com", require_https=False)
+
+    def test_strips_surrounding_whitespace(self):
+        assert validate_url("  https://example.com  ") == "https://example.com"
+
+    def test_url_with_whitespace_inside_raises(self):
+        with pytest.raises(ValueError):
+            validate_url("https://example.com/a b")
