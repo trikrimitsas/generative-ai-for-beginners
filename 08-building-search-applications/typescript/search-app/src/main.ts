@@ -33,35 +33,33 @@ function cosineSimilarity(vector1: number[], vector2: number[]): number {
  * Main function to execute the document similarity comparison.
  */
 async function main() {
-    try {
-        
-        console.log("== Building Search Applications with Azure OpenAI ==");
+    console.log("== Building Search Applications with Azure OpenAI ==");
 
-        // Use the embeddings deployment configured in your .env file
-        const deploymentName = process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT || "text-embedding-3-small";
-        const client = new AzureOpenAI({ endpoint, apiKey: azureApiKey, apiVersion, deployment: deploymentName });
+    // Use the embeddings deployment configured in your .env file
+    const deploymentName = process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT || "text-embedding-3-small";
+    const client = new AzureOpenAI({ endpoint, apiKey: azureApiKey, apiVersion, deployment: deploymentName });
 
-        const source = "Car";
-        const compareTo = "Vehicle";
-        const parrot = "A bird";
+    const source = "Car";
+    const compareTo = "Vehicle";
+    const parrot = "A bird";
 
-        const parrotEmbedding = await client.embeddings.create({ model: deploymentName, input: [parrot] });
-        const embeddings = await client.embeddings.create({ model: deploymentName, input: [source] });
-        const embeddingsCompareTo = await client.embeddings.create({ model: deploymentName, input: [compareTo] });
+    const parrotEmbedding = await client.embeddings.create({ model: deploymentName, input: [parrot] });
+    const embeddings = await client.embeddings.create({ model: deploymentName, input: [source] });
+    const embeddingsCompareTo = await client.embeddings.create({ model: deploymentName, input: [compareTo] });
 
-        const carArray = embeddings.data[0].embedding;
-        const vehicleArray = embeddingsCompareTo.data[0].embedding;
-        const parrotArray = parrotEmbedding.data[0].embedding;
+    const carArray = embeddings.data[0].embedding;
+    const vehicleArray = embeddingsCompareTo.data[0].embedding;
+    const parrotArray = parrotEmbedding.data[0].embedding;
 
-        const scoreCarWithVehicle  = cosineSimilarity(carArray, vehicleArray);
-        console.log("Comparing - Car vs Vehicle...: ", scoreCarWithVehicle.toFixed(7));
+    const scoreCarWithVehicle  = cosineSimilarity(carArray, vehicleArray);
+    console.log("Comparing - Car vs Vehicle...: ", scoreCarWithVehicle.toFixed(7));
 
-        const scoreCarWithParrot  = cosineSimilarity(carArray, parrotArray);
-        console.log("Comparing - Car vs Parrot...: ", scoreCarWithParrot .toFixed(7));
-
-    } catch (error) {
-        console.error("The sample encountered an error:", error);
-    }
+    const scoreCarWithParrot  = cosineSimilarity(carArray, parrotArray);
+    console.log("Comparing - Car vs Parrot...: ", scoreCarWithParrot .toFixed(7));
 }
 
-main();
+// Report failures and exit with a non-zero status instead of swallowing them.
+main().catch((error) => {
+    console.error("The sample encountered an error:", error);
+    process.exitCode = 1;
+});

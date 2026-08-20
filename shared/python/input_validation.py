@@ -32,15 +32,15 @@ def validate_number_input(
     """
     try:
         num = int(value.strip())
-        if num < min_val or num > max_val:
-            raise ValueError(f"{field_name} must be between {min_val} and {max_val}, got {num}")
-        return num
     except (ValueError, AttributeError) as e:
-        if "must be between" in str(e):
-            raise
         raise ValueError(
             f"Please enter a valid {field_name} between {min_val} and {max_val}"
         ) from e
+
+    if num < min_val or num > max_val:
+        raise ValueError(f"{field_name} must be between {min_val} and {max_val}, got {num}")
+
+    return num
 
 
 def validate_text_input(

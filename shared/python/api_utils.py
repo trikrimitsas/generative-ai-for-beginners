@@ -5,11 +5,14 @@ This module provides wrapper functions for making HTTP requests with
 proper timeout, error handling, and retry logic.
 """
 
+import logging
 import os
 from typing import Any
 
 import requests
 from requests.exceptions import RequestException
+
+logger = logging.getLogger(__name__)
 
 
 def make_safe_request(
@@ -30,27 +33,31 @@ def make_safe_request(
 
     Raises:
         RequestException: If the request fails after all retries.
+        ValueError: If ``retries`` is less than 1.
 
     Example:
         >>> response = make_safe_request("https://api.example.com/data")
         >>> data = response.json()
     """
-    last_exception: Exception | None = None
+    if retries < 1:
+        raise ValueError(f"retries must be at least 1, got {retries}")
 
-    for attempt in range(retries):
+    for attempt in range(1, retries + 1):
         try:
             response = requests.request(method=method, url=url, timeout=timeout, **kwargs)
             response.raise_for_status()
             return response
         except RequestException as e:
-            last_exception = e
-            if attempt < retries - 1:
-                # Exponential backoff could be added here
-                continue
-            raise
+            if attempt == retries:
+                logger.error("%s %s failed after %d attempt(s): %s", method, url, attempt, e)
+                raise
+            # Retried failures are logged so they are never swallowed silently.
+            # Exponential backoff could be added here
+            logger.warning(
+                "%s %s failed (attempt %d of %d), retrying: %s", method, url, attempt, retries, e
+            )
 
-    # This should never be reached, but just in case
-    raise last_exception or RequestException("Request failed")
+    raise AssertionError("unreachable: the retry loop always returns or raises")
 
 
 def create_openai_client(api_key: str | None = None) -> Any:

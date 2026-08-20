@@ -52,9 +52,11 @@ try:
     image = Image.open(image_path)
     image.show()
 
-# catch exceptions
-#except BadRequestError as err:
-#    print(err)
+# catch exceptions - the prompt may be rejected, for example by the content filter.
+# Re-raise so the failure isn't hidden behind a "completed!" message.
+except BadRequestError as err:
+    print(f"The image request was rejected: {err}")
+    raise
 
-finally:
+else:
     print("completed!")

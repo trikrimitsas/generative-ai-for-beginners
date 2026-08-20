@@ -121,7 +121,10 @@ export async function main() {
         }
     });
     if (response.status !== "200") {
-        throw response.body.error;
+        // The SDK reports failures in the response body - wrap it in an Error so the
+        // message and a stack trace survive instead of throwing a bare object.
+        const error = response.body.error;
+        throw new Error(`Chat completion request failed (status ${response.status}): ${error?.message ?? JSON.stringify(error)}`);
     }
 
     // We expect the model to ask for a tool call
@@ -177,7 +180,8 @@ export async function main() {
                     }
                 });
                 if (response.status !== "200") {
-                    throw response.body.error;
+                    const error = response.body.error;
+                    throw new Error(`Follow-up request failed (status ${response.status}): ${error?.message ?? JSON.stringify(error)}`);
                 }
                 console.log(`Model response = ${response.body.choices[0].message.content}`);
             }
@@ -185,6 +189,8 @@ export async function main() {
     }
 }
 
+// Report failures and exit with a non-zero status instead of swallowing them.
 main().catch((err) => {
     console.error("The sample encountered an error:", err);
+    process.exitCode = 1;
 });

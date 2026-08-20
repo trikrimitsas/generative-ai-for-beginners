@@ -13,27 +13,30 @@ const apiVersion = "2025-04-01-preview";
 const promptImage = "captain with a parrot on his shoulder";
 
 export async function main() {
-  try {
-    console.log("== Image Generation App ==");
+  console.log("== Image Generation App ==");
 
-    const client = new AzureOpenAI({ endpoint, apiKey, deployment, apiVersion });
+  const client = new AzureOpenAI({ endpoint, apiKey, deployment, apiVersion });
 
-    const imageGenerations = await client.images.generate({
-      model: deployment,
-      prompt: promptImage,
-      n: 1,
-      size: "1024x1024",
-    });
+  const imageGenerations = await client.images.generate({
+    model: deployment,
+    prompt: promptImage,
+    n: 1,
+    size: "1024x1024",
+  });
 
-    for (const image of imageGenerations.data) {
-      // gpt-image models return the image as base64 (b64_json), not a URL
-      const buffer = Buffer.from(image.b64_json ?? "", "base64");
-      fs.writeFileSync("generated-image.png", buffer);
-      console.log("Saved generated-image.png");
+  for (const image of imageGenerations.data ?? []) {
+    // gpt-image models return the image as base64 (b64_json), not a URL
+    if (!image.b64_json) {
+      throw new Error("The model response did not contain image data (b64_json)");
     }
-  } catch (error) {
-    console.log("The sample encountered an error: ", error);
+    const buffer = Buffer.from(image.b64_json, "base64");
+    fs.writeFileSync("generated-image.png", buffer);
+    console.log("Saved generated-image.png");
   }
 }
 
-main();
+// Report failures and exit with a non-zero status instead of swallowing them.
+main().catch((error) => {
+  console.error("The sample encountered an error:", error);
+  process.exitCode = 1;
+});

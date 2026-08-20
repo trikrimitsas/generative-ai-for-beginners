@@ -55,7 +55,10 @@ export async function main() {
     });
 
     if (isUnexpected(response)) {
-        throw response.body.error;
+        // The SDK reports failures in the response body - wrap it in an Error so the
+        // message and a stack trace survive instead of throwing a bare object.
+        const error = response.body.error;
+        throw new Error(`Embeddings request failed (status ${response.status}): ${error?.message ?? JSON.stringify(error)}`);
     }
 
     for (const item of response.body.data) {
@@ -95,4 +98,5 @@ export async function main() {
 
 main().catch((err) => {
     console.error("The sample encountered an error:", err);
+    process.exitCode = 1;
 });

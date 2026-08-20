@@ -14,27 +14,27 @@ const client = new OpenAI({
 });
 
 export async function main() {
-    try {
-        console.log("== Chat Completions App ==");
+    console.log("== Chat Completions App ==");
 
-        // Use the deployment name configured in your .env file
-        const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-5-mini';
+    // Use the deployment name configured in your .env file
+    const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-5-mini';
 
-        const result = await client.responses.create({
-            model: deploymentName,
-            input: [
-                { role: "system", content: "You're the president of France" },
-                { role: "system", content: "You have just resigned" },
-                { role: "user", content: "What tasks needs doing?" }
-            ],
-            max_output_tokens: 100,
-            store: false,
-        });
+    const result = await client.responses.create({
+        model: deploymentName,
+        input: [
+            { role: "system", content: "You're the president of France" },
+            { role: "system", content: "You have just resigned" },
+            { role: "user", content: "What tasks needs doing?" }
+        ],
+        max_output_tokens: 100,
+        store: false,
+    });
 
-        console.log(result.output_text);
-    } catch (error) {
-        console.log("The sample encountered an error: ", error);
-    }
+    console.log(result.output_text);
 }
 
-main();
+// Report failures and exit with a non-zero status instead of swallowing them.
+main().catch((error) => {
+    console.error("The sample encountered an error:", error);
+    process.exitCode = 1;
+});

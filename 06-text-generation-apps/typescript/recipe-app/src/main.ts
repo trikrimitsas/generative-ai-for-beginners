@@ -30,52 +30,52 @@ export async function main() {
 
     const promptText = `Show me ${numRecipes} recipes for a dish with the following ingredients: ${ingredients}. Per recipe, list all the ingredients used, no ${filter}: `;
 
-    try {
-        const completionResponse = await client.responses.create({
-            model: deploymentName,
-            input: [
-                {
-                    role: 'system',
-                    content: 'Hello, I am a recipe recommendation bot. I will recommend recipes based on the ingredients you provide me.'
-                },
-                {
-                    role: 'user',
-                    content: promptText
-                },
-            ],
-            max_output_tokens: 700,
-            store: false,
-        });
+    const completionResponse = await client.responses.create({
+        model: deploymentName,
+        input: [
+            {
+                role: 'system',
+                content: 'Hello, I am a recipe recommendation bot. I will recommend recipes based on the ingredients you provide me.'
+            },
+            {
+                role: 'user',
+                content: promptText
+            },
+        ],
+        max_output_tokens: 700,
+        store: false,
+    });
 
-        console.log("Recipe Recommendations: ");
-        console.log(completionResponse.output_text);
+    console.log("Recipe Recommendations: ");
+    console.log(completionResponse.output_text);
 
-        const oldPromptResult = completionResponse.output_text;
-        const promptShoppingList = 'Produce a shopping list, and please do not include the following ingredients that I already have at home: ';
+    const oldPromptResult = completionResponse.output_text;
+    const promptShoppingList = 'Produce a shopping list, and please do not include the following ingredients that I already have at home: ';
 
-        const newPrompt = `Given ingredients at home: ${ingredients} and these generated recipes: ${oldPromptResult}, ${promptShoppingList}`;
+    const newPrompt = `Given ingredients at home: ${ingredients} and these generated recipes: ${oldPromptResult}, ${promptShoppingList}`;
 
-        const shoppingListResponse = await client.responses.create({
-            model: deploymentName,
-            input: [
-                {
-                    role: 'system',
-                    content: 'Here is your shopping list:'
-                },
-                {
-                    role: 'user',
-                    content: newPrompt
-                },
-            ],
-            max_output_tokens: 700,
-            store: false,
-        });
+    const shoppingListResponse = await client.responses.create({
+        model: deploymentName,
+        input: [
+            {
+                role: 'system',
+                content: 'Here is your shopping list:'
+            },
+            {
+                role: 'user',
+                content: newPrompt
+            },
+        ],
+        max_output_tokens: 700,
+        store: false,
+    });
 
-        console.log("\n ===== Shopping List ===== \n");
-        console.log(shoppingListResponse.output_text);
-    } catch (error) {
-        console.log('The sample encountered an error: ', error);
-    }
+    console.log("\n ===== Shopping List ===== \n");
+    console.log(shoppingListResponse.output_text);
 }
 
-main();
+// Report failures and exit with a non-zero status instead of swallowing them.
+main().catch((error) => {
+    console.error('The sample encountered an error:', error);
+    process.exitCode = 1;
+});

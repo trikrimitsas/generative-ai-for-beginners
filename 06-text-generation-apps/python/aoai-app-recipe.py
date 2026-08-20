@@ -1,6 +1,7 @@
 from openai import OpenAI
 import os
 import re
+import sys
 from dotenv import load_dotenv
 
 # load environment variables from .env file
@@ -19,11 +20,13 @@ def validate_number_input(value: str, min_val: int = 1, max_val: int = 20) -> in
     """Validate and sanitize numeric input."""
     try:
         num = int(value)
-        if num < min_val or num > max_val:
-            raise ValueError(f"Number must be between {min_val} and {max_val}")
-        return num
-    except ValueError:
-        raise ValueError(f"Please enter a valid number between {min_val} and {max_val}")
+    except ValueError as e:
+        raise ValueError(f"Please enter a valid number between {min_val} and {max_val}") from e
+
+    if num < min_val or num > max_val:
+        raise ValueError(f"Number must be between {min_val} and {max_val}, got {num}")
+
+    return num
 
 def validate_text_input(value: str, max_length: int = 500) -> str:
     """Validate and sanitize text input to prevent prompt injection."""
@@ -56,7 +59,7 @@ try:
     filter_value = validate_text_input(filter_input, 100) if filter_input.strip() else "none"
 except ValueError as e:
     print(f"Input validation error: {e}")
-    exit(1)
+    sys.exit(1)
 
 # interpolate the number of recipes into the prompt and ingredients
 # Note: Using validated and sanitized inputs

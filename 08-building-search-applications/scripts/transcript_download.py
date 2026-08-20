@@ -106,9 +106,10 @@ def get_transcript(playlist_item, counter_id):
             json.dump(transcript, file, indent=4, ensure_ascii=False)
             # file.write(transcript)
 
-    except Exception as exception:
-        logger.debug(exception)
-        logger.debug("Transcription not found for video: %s", video_id)
+    except Exception:
+        # Log at warning level with the traceback: a video without a transcript is
+        # expected, but a credential or network failure must not be invisible.
+        logger.warning("Could not download the transcript for video: %s", video_id, exc_info=True)
         return False
 
     return True

@@ -46,13 +46,12 @@ async function findWeather(currentLocation: string, placeType: string): Promise<
     const response = await axios.get(url, { timeout: 10000 });
     return response.data;
   } catch (error) {
-    // SECURITY: Avoid logging full error which may contain sensitive data
+    // SECURITY: Avoid propagating the full error, which may contain the API key,
+    // but do propagate the failure so the caller can't mistake it for a result.
     if (error instanceof AxiosError) {
-      console.error(`API request failed: ${error.message} (Status: ${error.response?.status || 'N/A'})`);
-    } else {
-      console.error('Error in findWeather: An unexpected error occurred');
+      throw new Error(`Weather API request failed: ${error.message} (Status: ${error.response?.status || 'N/A'})`);
     }
-    return { error: 'Failed to retrieve weather data' };
+    throw new Error('Weather API request failed: an unexpected error occurred');
   }
 }
 
@@ -78,59 +77,58 @@ const getCurrentWeatherTool = {
 };
 
 async function main() {
-  try {
-    console.log("== Chat App with Functions (Responses API) ==");
+  console.log("== Chat App with Functions (Responses API) ==");
 
-    // The Responses API is served from the Azure OpenAI (Microsoft Foundry) v1 endpoint.
-    const client = new OpenAI({
-      apiKey: azureApiKey,
-      baseURL: `${endpoint.replace(/\/$/, '')}/openai/v1/`,
-    });
-    const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5-mini";
+  // The Responses API is served from the Azure OpenAI (Microsoft Foundry) v1 endpoint.
+  const client = new OpenAI({
+    apiKey: azureApiKey,
+    baseURL: `${endpoint.replace(/\/$/, '')}/openai/v1/`,
+  });
+  const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5-mini";
 
-    const userParams = {
-      location: "New York",
-      unit: "C"
-    };
+  const userParams = {
+    location: "New York",
+    unit: "C"
+  };
 
-    const result = await client.responses.create({
-      model: deploymentName,
-      input: [
-        {
-          role: "user",
-          content: `What's the weather in ${userParams.location}, ${userParams.unit}?`,
-        },
-      ],
-      tools: [getCurrentWeatherTool],
-      store: false,
-    });
+  const result = await client.responses.create({
+    model: deploymentName,
+    input: [
+      {
+        role: "user",
+        content: `What's the weather in ${userParams.location}, ${userParams.unit}?`,
+      },
+    ],
+    tools: [getCurrentWeatherTool],
+    store: false,
+  });
 
-    for (const item of result.output) {
-      if (item.type === "function_call") {
-        console.log(item);
+  for (const item of result.output) {
+    if (item.type === "function_call") {
+      console.log(item);
 
-        // SECURITY: Safely parse JSON with validation
-        let parsedArgs: { location?: string; unit?: string };
-        try {
-          parsedArgs = JSON.parse(item.arguments || '{}');
-        } catch (parseError) {
-          console.error('Failed to parse function arguments');
-          continue;
-        }
-
-        const { location, unit } = parsedArgs;
-        if (!location) {
-          console.error('Missing required location parameter');
-          continue;
-        }
-
-        let response = await findWeather(location, unit || 'C');
-        console.log("Result from Bing Maps API..: ", response);
+      // SECURITY: Safely parse JSON with validation
+      let parsedArgs: { location?: string; unit?: string };
+      try {
+        parsedArgs = JSON.parse(item.arguments || '{}');
+      } catch (parseError) {
+        const message = parseError instanceof Error ? parseError.message : String(parseError);
+        throw new Error(`Failed to parse function arguments: ${message}`);
       }
+
+      const { location, unit } = parsedArgs;
+      if (!location) {
+        throw new Error('The model did not provide the required location parameter');
+      }
+
+      const response = await findWeather(location, unit || 'C');
+      console.log("Result from Bing Maps API..: ", response);
     }
-  } catch (error) {
-    console.error("The sample encountered an error...:", error);
   }
 }
 
-main();
+// Report failures and exit with a non-zero status instead of swallowing them.
+main().catch((error) => {
+  console.error("The sample encountered an error...:", error);
+  process.exitCode = 1;
+});

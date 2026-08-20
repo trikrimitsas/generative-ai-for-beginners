@@ -48,45 +48,48 @@ export async function main() {
         }
     });
 
-try { 
-
-
     if (response.status !== "200") {
-        throw response.body.error;
+        // The SDK reports failures in the response body - wrap it in an Error so the
+        // message and a stack trace survive instead of throwing a bare object.
+        const error = response.body.error;
+        throw new Error(`Chat completion request failed (status ${response.status}): ${error?.message ?? JSON.stringify(error)}`);
     }
     console.log(response.body.choices[0].message.content);
 
+    const oldPromptResult = response.body.choices[0].message.content;
 
-const oldPromptResult = response.body.choices[0].message.content;
+    const promptShoppingList = 'Produce a shopping list, and please do not include the following ingredients that I already have at home: ';
 
-const promptShoppingList = 'Produce a shopping list, and please do not include the following ingredients that I already have at home: ';
+    const newPrompt = `Given ingredients at home: ${ingredients} and these generated recipes: ${oldPromptResult}, ${promptShoppingList}`;
 
-const newPrompt = `Given ingredients at home: ${ingredients} and these generated recipes: ${oldPromptResult}, ${promptShoppingList}`;
+    const shoppingListMessage = await client.path("/chat/completions").post({
+        body: {
+            messages: [
+                {
+                    role: 'system',
+                    content: 'Here is your shopping list:'
+                },
+                {
+                    role: 'user',
+                    content: newPrompt
+                },
+            ],
+            model: modelName,
+        }
+    });
 
-const shoppingListMessage = 
-    await client.path("/chat/completions").post({
-    body: {
-        messages: [
-    {
-        role: 'system',
-        content: 'Here is your shopping list:'
-    },
-    {
-        role: 'user',
-        content: newPrompt
-    },
-],
-    model: modelName,
+    if (shoppingListMessage.status !== "200") {
+        const error = shoppingListMessage.body.error;
+        throw new Error(`Shopping list request failed (status ${shoppingListMessage.status}): ${error?.message ?? JSON.stringify(error)}`);
+    }
+
+    console.log("\n ===== Shopping List ===== \n");
+    console.log(shoppingListMessage.body.choices[0].message.content);
 }
 
-    })
 
-} catch (error) {
-    console.log('The sample encountered an error: ', error);
-}
-}
-
-
+// Report failures and exit with a non-zero status instead of swallowing them.
 main().catch((err) => {
     console.error("The sample encountered an error:", err);
+    process.exitCode = 1;
 });

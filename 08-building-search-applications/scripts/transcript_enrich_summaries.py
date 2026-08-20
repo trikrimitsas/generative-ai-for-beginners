@@ -3,6 +3,7 @@
 import json
 import os
 import queue
+import sys
 import threading
 import logging
 import argparse
@@ -27,6 +28,7 @@ AZURE_OPENAI_MODEL_DEPLOYMENT_NAME = os.getenv(
 MAX_TOKENS = 512
 PROCESSOR_THREADS = 10
 OPENAI_REQUEST_TIMEOUT = 30
+MAX_ERRORS = 100
 
 client = OpenAI(
     api_key=API_KEY,
@@ -53,8 +55,6 @@ segments = []
 output_segments = []
 total_segments = 0
 
-errors = 0
-
 
 class Counter:
     """thread safe counter"""
@@ -72,12 +72,20 @@ class Counter:
 
 
 counter = Counter()
+error_counter = Counter()
+# Set when a worker hits an unrecoverable error so the other threads stop and the
+# script exits non-zero instead of writing a partially enriched output file.
+abort = threading.Event()
+
+
+class SummaryError(RuntimeError):
+    """Raised when the model response can't be used as a summary."""
 
 
 @retry(
     wait=wait_random_exponential(min=10, max=45),
     stop=stop_after_attempt(20),
-    retry=retry_if_not_exception_type(BadRequestError),
+    retry=retry_if_not_exception_type((BadRequestError, SummaryError)),
 )
 def chatgpt_summary(text):
     """generate a summary using chatgpt"""
@@ -105,10 +113,12 @@ def chatgpt_summary(text):
 
     # print(finish_reason)
     if finish_reason != "completed":
-        logger.warning("Stop reason: %s", finish_reason)
-        logger.warning("Text: %s", text)
-        logger.warning("Increase Max Tokens and try again")
-        exit(1)
+        # Raise instead of calling exit(): a SystemExit raised on a worker thread is
+        # silently discarded and the script would carry on as if nothing happened.
+        raise SummaryError(
+            f"Incomplete response (status: {finish_reason}). "
+            f"Increase MAX_TOKENS (currently {MAX_TOKENS}) and try again."
+        )
 
     return text
 
@@ -116,9 +126,8 @@ def chatgpt_summary(text):
 def process_queue(progress, task):
     """process the queue"""
     while not q.empty():
-        if errors > 100:
-            logger.error("Too many errors. Exiting...")
-            exit(1)
+        if abort.is_set():
+            return
 
         segment = q.get()
 
@@ -138,11 +147,25 @@ def process_queue(progress, task):
         try:
             summary = chatgpt_summary(text)
         except BadRequestError as invalid_request_error:
-            logger.warning("Error: %s", invalid_request_error)
+            # The model rejected this segment, so fall back to the raw text, but keep
+            # count so a run that fails for most segments doesn't look successful.
+            logger.warning(
+                "Segment rejected by the model, falling back to the raw text: %s",
+                invalid_request_error,
+            )
             summary = text
-        except Exception as e:
-            logger.warning("Error: %s", e)
-            summary = text
+            if error_counter.increment() > MAX_ERRORS:
+                logger.error("More than %d segments failed. Aborting...", MAX_ERRORS)
+                abort.set()
+                q.task_done()
+                return
+        except Exception:
+            # Anything else (auth, network, quota, a bad response) is unrecoverable
+            # for this run - report it with a traceback and stop the whole script.
+            logger.exception("Unexpected error while summarizing a segment. Aborting...")
+            abort.set()
+            q.task_done()
+            return
 
         count = counter.increment()
         progress.update(task, advance=1)
@@ -184,6 +207,10 @@ with Progress() as progress:
     # wait for all threads to finish
     for t in threads:
         t.join()
+
+if abort.is_set():
+    logger.error("Summarization failed, the enriched output file was not written")
+    sys.exit(1)
 
 
 # convert time '00:01:20' to seconds

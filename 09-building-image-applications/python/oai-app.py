@@ -49,8 +49,11 @@ try:
     image.show()
 
 # SECURITY: Catch specific OpenAI exceptions
+# Re-raise after reporting: the variation call below needs the generated image,
+# so continuing after a failure would only produce a confusing NameError.
 except OpenAIError as err:
     print(f"OpenAI API error: {err}")
+    raise
 
 # ---creating variation below---
 
