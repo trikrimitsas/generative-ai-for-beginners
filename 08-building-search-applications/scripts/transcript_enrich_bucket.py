@@ -1,20 +1,19 @@
-""" This script generates a master csv file from the transcript files."""
+"""This script generates a master csv file from the transcript files."""
 
 # from the transcript files, generate a master csv file
 # from the transcript folder read all the .json files then load the associated .vtt file
 
-from datetime import datetime, timedelta
 import glob
-import os
 import json
-import argparse
-import tiktoken
 import logging
+import os
+from datetime import datetime, timedelta
+
+import tiktoken
 from rich.progress import Progress
+from transcript_utils import clean_text, configure_logging, output_path, parse_arguments
 
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger(__name__)
-
+logger = configure_logging(__name__, logging.WARNING)
 
 SEGMENT_LENGTH_MINUTES = 5
 PERCENTAGE_OVERLAP = 0.05
@@ -24,20 +23,9 @@ MAX_TOKENS = 2048
 segments = []
 total_files = 0
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-f", "--folder")
-parser.add_argument("-m", "--minutes")
-parser.add_argument("--verbose", action="store_true")
-args = parser.parse_args()
-if args.verbose:
-    logger.setLevel(logging.DEBUG)
-
-TRANSCRIPT_FOLDER = args.folder if args.folder else None
+args = parse_arguments(logger, include_minutes=True)
+TRANSCRIPT_FOLDER = args.folder
 SEGMENT_LENGTH_MINUTES = int(args.minutes) if args.minutes else SEGMENT_LENGTH_MINUTES
-
-if not TRANSCRIPT_FOLDER:
-    logger.error("Transcript folder not provided")
-    exit(1)
 
 # https://stackoverflow.com/questions/75804599/openai-api-how-do-i-count-tokens-before-i-send-an-api-request
 ENCODING_MODEL = "gpt-4o-mini"
@@ -68,17 +56,6 @@ def gen_metadata_master(metadata):
         # clean the text
         text = text.replace("\n", "")
         metadata["text"] = text.strip()
-
-
-def clean_text(text):
-    """clean the text"""
-    text = text.replace("\n", " ")  # remove new lines
-    text = text.replace("&#39;", "'")
-    text = text.replace(">>", "")  # remove '>>'
-    text = text.replace("  ", " ")  # remove double spaces
-    text = text.replace("[inaudible]", "")  # [inaudible]
-
-    return text
 
 
 def append_text_to_previous_segment(text):
@@ -132,7 +109,7 @@ def parse_json_vtt_transcript(vtt, metadata):
     current_token_length = len(tokenizer.encode(text))
 
     # open the vtt file
-    with open(vtt, "r", encoding="utf-8") as json_file:
+    with open(vtt, encoding="utf-8") as json_file:
         json_vtt = json.load(json_file)
 
         for segment in json_vtt:
@@ -146,7 +123,7 @@ def parse_json_vtt_transcript(vtt, metadata):
                 seg_finish_seconds = seg_begin_seconds + SEGMENT_LENGTH_MINUTES * 60
 
             # Get the number of tokens in the text.
-            # Need to calc to allow for 1024 tokens for 
+            # Need to calc to allow for 1024 tokens for
             # summary request in next pipeline step
             total_tokens = len(tokenizer.encode(current_text)) + current_token_length
 
@@ -186,8 +163,9 @@ def parse_json_vtt_transcript(vtt, metadata):
                     first_segment = False
                     add_new_segment(metadata, text, seg_begin_seconds)
             else:
-                 # If segments list is empty, add the text as a new segment
+                # If segments list is empty, add the text as a new segment
                 add_new_segment(metadata, text, seg_begin_seconds)
+
 
 def get_transcript(metadata):
     """get the transcript from the .vtt file"""
@@ -226,6 +204,6 @@ logger.debug("Total segments: %s", len(segments))
 
 # save segments to a json file
 
-output_file = os.path.join(TRANSCRIPT_FOLDER, "output", "master_transcriptions.json")
+output_file = output_path(TRANSCRIPT_FOLDER, "master_transcriptions.json")
 with open(output_file, "w", encoding="utf-8") as f:
     json.dump(segments, f, ensure_ascii=False, indent=4)

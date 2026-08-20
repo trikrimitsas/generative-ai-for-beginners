@@ -98,22 +98,26 @@ def create_openai_client(api_key: str | None = None) -> Any:
 def create_azure_openai_client(
     endpoint: str | None = None,
     api_key: str | None = None,
+    api_version: str | None = None,
 ) -> Any:
     """
     Create an Azure OpenAI (Microsoft Foundry) client with proper configuration.
 
-    The client targets the Azure OpenAI v1 endpoint (``<endpoint>/openai/v1/``),
-    which powers the Responses API. Because the v1 endpoint is used, no
-    ``api_version`` is required.
+    When ``api_version`` is provided, the client uses the Azure OpenAI endpoint
+    and API version. Otherwise, it targets the Azure OpenAI v1 endpoint
+    (``<endpoint>/openai/v1/``), which powers the Responses API.
 
     Args:
         endpoint: Azure OpenAI endpoint URL. If not provided, reads from
                   AZURE_OPENAI_ENDPOINT env var.
         api_key: Azure OpenAI API key. If not provided, reads from
                  AZURE_OPENAI_API_KEY env var.
+        api_version: Optional Azure OpenAI API version. If provided, creates
+                     an ``AzureOpenAI`` client using this API version.
 
     Returns:
-        An OpenAI client instance configured for the Azure v1 endpoint.
+        An OpenAI client instance configured for the Azure v1 endpoint, or an
+        AzureOpenAI client configured for the specified API version.
 
     Raises:
         ValueError: If endpoint or API key is missing.
@@ -124,7 +128,7 @@ def create_azure_openai_client(
         >>> response = client.responses.create(model="gpt-5-mini", input="Hello")
     """
     try:
-        from openai import OpenAI
+        from openai import AzureOpenAI, OpenAI
     except ImportError as e:
         raise ImportError(
             "The 'openai' package is required. Install it with: pip install openai"
@@ -143,6 +147,13 @@ def create_azure_openai_client(
         raise ValueError(
             "Azure OpenAI API key is required. Set AZURE_OPENAI_API_KEY "
             "environment variable or pass api_key parameter."
+        )
+
+    if api_version:
+        return AzureOpenAI(
+            api_key=_api_key,
+            azure_endpoint=_endpoint,
+            api_version=api_version,
         )
 
     return OpenAI(
