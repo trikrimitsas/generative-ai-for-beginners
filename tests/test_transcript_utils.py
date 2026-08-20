@@ -1,6 +1,7 @@
 """Tests for the transcript preparation helpers."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -64,7 +65,7 @@ def test_parse_arguments_missing_folder_exits(caplog):
     logger = configure_logging("transcript-utils-missing-folder", logging.WARNING)
 
     with caplog.at_level(logging.ERROR, logger=logger.name), pytest.raises(SystemExit) as exc:
-        parse_arguments(logger)
+        parse_arguments(logger, argv=[])
 
     assert exc.value.code == 1
     assert "Transcript folder not provided" in caplog.text
@@ -81,4 +82,6 @@ def test_parse_arguments_missing_playlist_exits(caplog):
 
 
 def test_output_path_uses_output_directory():
-    assert output_path("transcripts", "master.json") == "transcripts/output/master.json"
+    assert output_path("transcripts", "master.json") == os.path.join(
+        "transcripts", "output", "master.json"
+    )
